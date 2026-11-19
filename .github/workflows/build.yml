@@ -1,0 +1,91 @@
+name: Build mod
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:   # кнопка «Run workflow» вручную
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build
+        id: build
+        continue-on-error: true
+        run: ./gradlew build --no-daemon
+
+      # Если сборка упала: печатаем реальные имена классов и методов Minecraft 26.2,
+      # чтобы поправить код по фактам, а не по догадкам.
+      - name: Diagnostics (Minecraft API names)
+        if: steps.build.outcome == 'failure'
+        run: |
+          set +e
+          JARS=$(find ~/.gradle -name '*.jar' -size +3M 2>/dev/null | grep -iE 'minecraft')
+          echo "=== candidate jars"
+          echo "$JARS"
+          for j in $JARS; do
+            if unzip -l "$j" 2>/dev/null | grep -q 'net/minecraft/world/entity/monster/Monster'; then
+              echo
+              echo "################ MINECRAFT JAR: $j"
+              echo "=== ArrowItem / AbstractArrow / Projectile classes"
+              unzip -l "$j" | awk '{print $4}' | grep -E 'ArrowItem|AbstractArrow|/Arrow\.class|projectile/Projectile\.class' | sort
+              echo
+              echo "=== javap ArrowItem"
+              javap -cp "$j" -p net.minecraft.world.item.ArrowItem
+              for c in $(unzip -l "$j" | awk '{print $4}' | grep -E '/AbstractArrow\.class$' | sed 's/\.class$//; s#/#.#g'); do
+                echo
+                echo "=== javap $c (shoot/baseDamage)"
+                javap -cp "$j" -p "$c" | grep -E 'setBaseDamage|setOwner|shoot|AbstractArrow\('
+              done
+              echo
+              echo "=== Items.ARROW / CROSSBOW"
+              javap -cp "$j" -p net.minecraft.world.item.Items | grep -E ' ARROW;| CROSSBOW;'
+              echo
+              echo "=== SoundEvents: crossbow / pillager"
+              javap -cp "$j" -p net.minecraft.sounds.SoundEvents | grep -E 'CROSSBOW_SHOOT|CROSSBOW_LOADING_START|PILLAGER_(AMBIENT|HURT|DEATH)'
+              for c in net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal net.minecraft.world.entity.ai.goal.Goal net.minecraft.world.entity.ai.control.MoveControl net.minecraft.world.entity.Mob net.minecraft.world.entity.Entity net.minecraft.world.entity.monster.Monster; do
+                echo
+                echo "=== javap $c (used by the mod)"
+                javap -cp "$j" -p "$c" | grep -E 'Goal\(|requiresUpdateEveryTick|setFlags|strafe|getSensing|getNavigation|getLookControl|setAggressive|isAggressive|createMonsterAttributes|setRemainingFireTicks|distanceToSqr|playSound\(|getY\('
+              done
+              echo
+              echo "=== EntityType.Builder / spawnEgg / setId"
+              javap -cp "$j" -p 'net.minecraft.world.entity.EntityType$Builder' | grep -E 'of\(|sized|clientTrackingRange|build'
+              javap -cp "$j" -p 'net.minecraft.world.item.Item$Properties' | grep -E 'spawnEgg|setId'
+              echo
+              echo "=== render classes"
+              unzip -l "$j" | awk '{print $4}' | grep -E 'client/model/EntityModel|renderer/entity/MobRenderer|state/LivingEntityRenderState|geom/builders/CubeListBuilder|geom/ModelPart' | sort
+              javap -cp "$j" -p net.minecraft.client.renderer.entity.state.LivingEntityRenderState | grep -E 'yRot|xRot|ageInTicks|walkAnimation'
+              javap -cp "$j" -p net.minecraft.client.renderer.entity.MobRenderer | grep -E 'extractRenderState|createRenderState|getTextureLocation|MobRenderer\('
+              break
+            fi
+          done
+
+      - name: Upload mod jar
+        if: steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sinister-elf-mod
+          path: |
+            build/libs/*.jar
+            !build/libs/*-sources.jar
+          if-no-files-found: error
+
+      - name: Fail if build failed
+        if: steps.build.outcome == 'failure'
+        run: exit 1
