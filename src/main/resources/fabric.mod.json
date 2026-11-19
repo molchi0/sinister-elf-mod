@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "sinister_elf",
+  "version": "${version}",
+  "name": "Sinister Elf",
+  "description": "Зловещий эльф: горбатый, с красной улыбкой и арбалетом, в потрёпанном костюме эльфа Санты. Стреляет огненными стрелами. Появляется только по команде или из яйца призыва.",
+  "authors": ["Артём"],
+  "license": "MIT",
+  "icon": "assets/sinister_elf/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["net.sinisterelf.SinisterElfMod"],
+    "client": ["net.sinisterelf.client.SinisterElfClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.1",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
